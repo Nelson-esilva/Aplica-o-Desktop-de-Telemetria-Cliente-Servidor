@@ -1,0 +1,4 @@
+servidor
+cliente
+*.o
+sessoes.log
