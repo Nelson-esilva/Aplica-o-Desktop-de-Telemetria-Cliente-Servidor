@@ -1,15 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
-/*
- * Servidor de telemetria TCP (concorrente via fork)
- * Atividade Aula 5 - Microprocessadores e Microcontroladores
- *
- * Escuta numa porta TCP e aceita varios clientes simultaneamente.
- * Cada cliente e atendido por um processo filho criado com fork().
- *
- * Uso: ./servidor [porta]
- *      (porta padrao: 5000)
- */
+/* Servidor TCP concorrente (fork por cliente). Uso: ./servidor [porta] */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +9,6 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -50,10 +40,6 @@ static void data_hora(time_t t, char *buf, size_t tam)
     strftime(buf, tam, "%Y-%m-%d %H:%M:%S", &tm_local);
 }
 
-/*
- * Recebe linha CSV: "sensor-id,temp,luz,umid"
- * Imprime formatado e atualiza sensor_id_out com o ID lido.
- */
 static void processar_linha(const char *linha, int contador,
                             char *sensor_id_out, size_t id_tam)
 {
@@ -75,10 +61,7 @@ static void processar_linha(const char *linha, int contador,
     }
 }
 
-/*
- * Anexa uma linha no arquivo de log com os dados da sessao.
- * fopen("a") + fputs e atomico por linha (POSIX O_APPEND ate PIPE_BUF).
- */
+/* Append atomico por linha (POSIX O_APPEND ate PIPE_BUF = 4 KB). */
 static void registrar_sessao(const char *sensor_id, const char *ip, int porta,
                               pid_t pid, time_t inicio, time_t fim, int total)
 {
@@ -113,11 +96,11 @@ static void atender_cliente(int cliente_fd, struct sockaddr_in *cliente_addr)
     char sensor_id[64] = "";
     size_t lin_len = 0;
     int contador = 0;
-    time_t inicio, fim;
     int porta_cliente = ntohs(cliente_addr->sin_port);
+    time_t inicio = time(NULL);
+    time_t fim;
 
     inet_ntop(AF_INET, &cliente_addr->sin_addr, ip, sizeof(ip));
-    inicio = time(NULL);
     hora_atual(hora, sizeof(hora));
     printf("[%s] [pid %d] Cliente conectado de %s:%d\n",
            hora, getpid(), ip, porta_cliente);
@@ -167,8 +150,7 @@ int main(int argc, char *argv[])
     signal(SIGINT, handler_sinal);
     signal(SIGTERM, handler_sinal);
     signal(SIGPIPE, SIG_IGN);
-    /* SIGCHLD ignorado: filhos terminam sem virar zumbi */
-    signal(SIGCHLD, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN); /* evita filhos zumbis sem precisar de waitpid */
 
     servidor_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (servidor_fd < 0) {
@@ -206,7 +188,6 @@ int main(int argc, char *argv[])
     while (!parar) {
         struct sockaddr_in cliente_addr;
         socklen_t cliente_len = sizeof(cliente_addr);
-        pid_t pid;
         int cliente_fd = accept(servidor_fd,
                                 (struct sockaddr *)&cliente_addr, &cliente_len);
         if (cliente_fd < 0) {
@@ -217,7 +198,7 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        pid = fork();
+        pid_t pid = fork();
         if (pid < 0) {
             perror("fork");
             close(cliente_fd);
@@ -225,14 +206,12 @@ int main(int argc, char *argv[])
         }
 
         if (pid == 0) {
-            /* processo filho: atende este cliente e sai */
             close(servidor_fd);
             atender_cliente(cliente_fd, &cliente_addr);
             close(cliente_fd);
             _exit(0);
         }
 
-        /* processo pai: continua escutando, o filho cuida do cliente */
         close(cliente_fd);
     }
 

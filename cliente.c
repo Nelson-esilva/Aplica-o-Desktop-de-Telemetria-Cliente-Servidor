@@ -1,15 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
-/*
- * Cliente de telemetria TCP
- * Atividade Aula 5 - Microprocessadores e Microcontroladores
- *
- * Conecta num servidor TCP e envia leituras de sensor simulado
- * periodicamente (temperatura, luminosidade, umidade).
- *
- * Uso: ./cliente [host] [porta] [sensor_id] [intervalo_ms]
- *      Padrao: 127.0.0.1 5000 sensor-01 1000
- */
+/* Cliente TCP que envia telemetria simulada periodicamente.
+   Uso: ./cliente [host] [porta] [sensor_id] [intervalo_ms] */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,12 +26,12 @@ static void handler_sinal(int s)
     parar = 1;
 }
 
-static void gerar_telemetria(const char *id, char *buf, size_t tam)
+static int gerar_telemetria(const char *id, char *buf, size_t tam)
 {
     float temp = 20.0f + (float)(rand() % 150) / 10.0f;
     float luz  = (float)(rand() % 1001) / 10.0f;
     float umid = 50.0f + (float)(rand() % 400) / 10.0f;
-    snprintf(buf, tam, "%s,%.1f,%.1f,%.1f\n", id, temp, luz, umid);
+    return snprintf(buf, tam, "%s,%.1f,%.1f,%.1f\n", id, temp, luz, umid);
 }
 
 static void dormir_ms(int ms)
@@ -110,9 +102,9 @@ int main(int argc, char *argv[])
     srand((unsigned)time(NULL) ^ (unsigned)getpid());
 
     while (!parar) {
-        gerar_telemetria(id, msg, sizeof(msg));
+        int len = gerar_telemetria(id, msg, sizeof(msg));
 
-        ssize_t enviado = send(sock, msg, strlen(msg), 0);
+        ssize_t enviado = send(sock, msg, (size_t)len, 0);
         if (enviado < 0) {
             perror("send");
             break;
@@ -120,8 +112,6 @@ int main(int argc, char *argv[])
 
         contador++;
 
-        /* exibe sem o \n final */
-        size_t len = strlen(msg);
         if (len > 0 && msg[len - 1] == '\n') {
             msg[len - 1] = '\0';
         }
